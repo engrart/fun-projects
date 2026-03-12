@@ -94,6 +94,38 @@
       font-size: 0.95rem;
     }
 
+    .sync-panel {
+      display: grid;
+      gap: 8px;
+      justify-items: end;
+      text-align: right;
+    }
+
+    .sync-badge {
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border: 1px solid rgba(74, 53, 38, 0.2);
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #fff8ee;
+      color: var(--brown-2);
+    }
+
+    .sync-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .mini-status {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-width: 360px;
+    }
+
     .stats {
       display: grid;
       grid-template-columns: repeat(3, minmax(120px, 1fr));
@@ -244,6 +276,14 @@
       transition: transform var(--transition), filter var(--transition);
     }
 
+    .button:disabled,
+    .fetch-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+      filter: none;
+    }
+
     .button:hover,
     .fetch-btn:hover {
       transform: translateY(-1px);
@@ -367,6 +407,19 @@
     }
 
     @media (max-width: 780px) {
+      .title-wrap {
+        align-items: stretch;
+      }
+
+      .sync-panel {
+        justify-items: start;
+        text-align: left;
+      }
+
+      .sync-controls {
+        justify-content: flex-start;
+      }
+
       .form-grid {
         grid-template-columns: 1fr;
       }
@@ -392,6 +445,14 @@
         <div>
           <h1>Vinyl Record Tracker</h1>
           <p class="subtitle">Keep your crate organized while you browse the bins.</p>
+        </div>
+        <div class="sync-panel" aria-label="Cloud sync controls">
+          <span class="sync-badge" id="sync-badge">Local Mode</span>
+          <div class="sync-controls">
+            <button class="button secondary" id="sign-in" type="button">Sign In To Sync</button>
+            <button class="button secondary" id="sign-out" type="button" disabled>Sign Out</button>
+          </div>
+          <p class="mini-status" id="sync-info">Set Firebase config in this file to enable cloud sync and multi-device editing.</p>
         </div>
       </div>
       <div class="stats" aria-label="Collection stats">
@@ -508,9 +569,36 @@
     </article>
   </template>
 
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      onAuthStateChanged,
+      signInWithPopup,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import {
+      doc,
+      getFirestore,
+      onSnapshot,
+      serverTimestamp,
+      setDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
     (function () {
       const STORAGE_KEY = "vinyl-record-tracker.v1";
+
+      // Replace these values with your Firebase web app config.
+      const firebaseConfig = {
+        apiKey: "",
+        authDomain: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+      };
+
       const tabs = Array.from(document.querySelectorAll(".tab-btn"));
       const form = document.getElementById("record-form");
       const searchInput = document.getElementById("search");
@@ -523,6 +611,10 @@
       const artUrlEl = document.getElementById("artUrl");
       const artPreviewEl = document.getElementById("art-preview");
       const fetchArtBtn = document.getElementById("fetch-art");
+      const signInBtn = document.getElementById("sign-in");
+      const signOutBtn = document.getElementById("sign-out");
+      const syncInfoEl = document.getElementById("sync-info");
+      const syncBadgeEl = document.getElementById("sync-badge");
 
       const statOwnedEl = document.getElementById("stat-owned");
       const statWishlistEl = document.getElementById("stat-wishlist");
@@ -531,6 +623,11 @@
       let records = [];
       let activeSection = "collection";
       let uploadedArtDataUrl = "";
+      let auth = null;
+      let db = null;
+      let currentUser = null;
+      let unsubscribeRecords = null;
+      let cloudEnabled = false;
 
       const sectionLabel = {
         collection: "My Collection",
@@ -543,10 +640,43 @@
         statusEl.style.color = isError ? "#8a2f2f" : "#4a3526";
       }
 
+      function setSyncInfo(message, isError) {
+        syncInfoEl.textContent = message;
+        syncInfoEl.style.color = isError ? "#8a2f2f" : "#7a6252";
+      }
+
+      function setSyncBadge(label, cloudConnected) {
+        syncBadgeEl.textContent = label;
+        syncBadgeEl.style.background = cloudConnected ? "#f1debf" : "#fff8ee";
+      }
+
+      function isFirebaseConfigured(config) {
+        const required = ["apiKey", "authDomain", "projectId", "appId"];
+        return required.every((key) => Boolean(config[key] && config[key].trim()));
+      }
+
+      function normalizeRecord(value) {
+        return {
+          id: String(value.id || crypto.randomUUID()),
+          artist: String(value.artist || "").trim(),
+          title: String(value.title || "").trim(),
+          year: String(value.year || "").trim(),
+          genre: String(value.genre || "").trim(),
+          notes: String(value.notes || "").trim(),
+          art: String(value.art || "").trim(),
+          section: ["collection", "wishlist", "giveaway"].includes(value.section)
+            ? value.section
+            : "collection"
+        };
+      }
+
       function loadRecords() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          records = raw ? JSON.parse(raw) : [];
+          const parsed = raw ? JSON.parse(raw) : [];
+          records = Array.isArray(parsed)
+            ? parsed.map(normalizeRecord).filter((r) => r.artist && r.title)
+            : [];
         } catch (err) {
           records = [];
           setStatus("Saved data was invalid and has been reset.", true);
@@ -555,6 +685,28 @@
 
       function saveRecords() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+      }
+
+      async function saveRecordsToCloud() {
+        if (!cloudEnabled || !currentUser || !db) {
+          return;
+        }
+
+        try {
+          const ref = doc(db, "collections", currentUser.uid);
+          await setDoc(ref, {
+            records,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (err) {
+          setSyncInfo("Cloud save failed. Changes are still safe in local storage.", true);
+        }
+      }
+
+      async function persistRecords() {
+        saveRecords();
+        updateStats();
+        await saveRecordsToCloud();
       }
 
       function updateStats() {
@@ -624,22 +776,109 @@
           }
 
           moveSelect.value = record.section;
-          moveSelect.addEventListener("change", () => {
+          moveSelect.addEventListener("change", async () => {
             record.section = moveSelect.value;
-            saveRecords();
-            updateStats();
+            await persistRecords();
             render();
           });
 
-          deleteBtn.addEventListener("click", () => {
+          deleteBtn.addEventListener("click", async () => {
             records = records.filter((r) => r.id !== record.id);
-            saveRecords();
-            updateStats();
+            await persistRecords();
             render();
           });
 
           card.dataset.id = record.id;
           recordsEl.appendChild(fragment);
+        });
+      }
+
+      function setAuthUiSignedOut() {
+        signInBtn.disabled = !cloudEnabled;
+        signOutBtn.disabled = true;
+        setSyncBadge("Local Mode", false);
+      }
+
+      function setAuthUiSignedIn() {
+        signInBtn.disabled = true;
+        signOutBtn.disabled = false;
+        setSyncBadge("Cloud Synced", true);
+      }
+
+      async function startCloudListener() {
+        if (!db || !currentUser) {
+          return;
+        }
+
+        if (unsubscribeRecords) {
+          unsubscribeRecords();
+          unsubscribeRecords = null;
+        }
+
+        const ref = doc(db, "collections", currentUser.uid);
+
+        unsubscribeRecords = onSnapshot(ref, async (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const cloudRecords = Array.isArray(data.records)
+              ? data.records.map(normalizeRecord).filter((r) => r.artist && r.title)
+              : [];
+            records = cloudRecords;
+            saveRecords();
+            updateStats();
+            render();
+            setSyncInfo("Cloud data loaded and live sync is on.");
+            return;
+          }
+
+          if (records.length > 0) {
+            await saveRecordsToCloud();
+            setSyncInfo("Local records uploaded to cloud.");
+          } else {
+            setSyncInfo("Cloud profile is ready. Add records to begin syncing.");
+          }
+        }, () => {
+          setSyncInfo("Live sync unavailable right now. Using local data.", true);
+        });
+      }
+
+      function initCloud() {
+        if (!isFirebaseConfigured(firebaseConfig)) {
+          cloudEnabled = false;
+          setAuthUiSignedOut();
+          setSyncInfo("Cloud disabled until Firebase config is filled in this file.");
+          return;
+        }
+
+        try {
+          const app = initializeApp(firebaseConfig);
+          auth = getAuth(app);
+          db = getFirestore(app);
+          cloudEnabled = true;
+          signInBtn.disabled = false;
+          setSyncInfo("Cloud ready. Sign in to sync this collection across devices.");
+        } catch (err) {
+          cloudEnabled = false;
+          setAuthUiSignedOut();
+          setSyncInfo("Firebase init failed. Using local mode.", true);
+          return;
+        }
+
+        onAuthStateChanged(auth, async (user) => {
+          currentUser = user;
+          if (!user) {
+            if (unsubscribeRecords) {
+              unsubscribeRecords();
+              unsubscribeRecords = null;
+            }
+            setAuthUiSignedOut();
+            setSyncInfo("Signed out. Local mode active.");
+            return;
+          }
+
+          setAuthUiSignedIn();
+          setSyncInfo("Signed in. Connecting live cloud sync...");
+          await startCloudListener();
         });
       }
 
@@ -744,7 +983,34 @@
         }
       });
 
-      form.addEventListener("submit", (event) => {
+      signInBtn.addEventListener("click", async () => {
+        if (!cloudEnabled || !auth) {
+          setSyncInfo("Cloud is not configured yet.", true);
+          return;
+        }
+
+        signInBtn.disabled = true;
+        try {
+          const provider = new GoogleAuthProvider();
+          await signInWithPopup(auth, provider);
+        } catch (err) {
+          setSyncInfo("Sign-in failed or was cancelled.", true);
+          signInBtn.disabled = false;
+        }
+      });
+
+      signOutBtn.addEventListener("click", async () => {
+        if (!auth) {
+          return;
+        }
+        try {
+          await signOut(auth);
+        } catch (err) {
+          setSyncInfo("Could not sign out. Try again.", true);
+        }
+      });
+
+      form.addEventListener("submit", async (event) => {
         event.preventDefault();
 
         const artist = form.artist.value.trim();
@@ -767,8 +1033,7 @@
         };
 
         records.unshift(record);
-        saveRecords();
-        updateStats();
+        await persistRecords();
 
         form.reset();
         resetArtPreview();
@@ -781,6 +1046,7 @@
       loadRecords();
       updateStats();
       render();
+      initCloud();
     })();
   </script>
 </body>
