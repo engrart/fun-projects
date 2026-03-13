@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pickleball Match Tracker</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Outfit:wght@400;600;700;800&display=swap');
+
+    :root {
+      --bg-1: #0a1a2f;
+      --bg-2: #12395d;
+      --card: #f8fbff;
+      --ink: #10223a;
+      --muted: #5f7087;
+      --accent: #00c27a;
+      --accent-2: #ff9f1a;
+      --win: #13c67a;
+      --loss: #f15f5f;
+      --shadow: 0 18px 36px rgba(8, 18, 34, 0.22);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: 'Outfit', sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(0, 194, 122, 0.28), transparent 42%),
+        radial-gradient(circle at 80% 10%, rgba(255, 159, 26, 0.3), transparent 38%),
+        linear-gradient(145deg, var(--bg-1), var(--bg-2));
+      padding: 1.1rem;
+    }
+
+    .app {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero {
+      color: #ffffff;
+      background:
+        linear-gradient(130deg, rgba(8, 21, 40, 0.86), rgba(18, 57, 93, 0.86)),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='rgba(255,255,255,0.12)' stroke-width='2'%3E%3Ccircle cx='36' cy='36' r='18'/%3E%3Ccircle cx='144' cy='90' r='18'/%3E%3Ccircle cx='90' cy='144' r='18'/%3E%3C/g%3E%3C/svg%3E");
+      background-size: cover;
+      padding: 1.3rem;
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .hero h1 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: clamp(1.9rem, 4vw, 2.6rem);
+      letter-spacing: 0.03em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .hero p {
+      font-size: 0.98rem;
+      color: #eaf3ff;
+      max-width: 65ch;
+    }
+
+    .content {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr;
+    }
+
+    .stack {
+      padding: 1rem;
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    form {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 0.85rem;
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 0.35rem;
+      font-size: 0.86rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    input {
+      border: 2px solid #d8e6f6;
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: var(--radius-sm);
+      padding: 0.68rem 0.8rem;
+      font-size: 0.97rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(0, 194, 122, 0.13);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 0.7rem 1.1rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.18s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #0da96d);
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: #fef1f1;
+      color: #cc3f3f;
+      border: 1px solid #f5c9c9;
+      border-radius: 9px;
+      padding: 0.45rem 0.7rem;
+      font-size: 0.83rem;
+    }
+
+    .status {
+      min-height: 1.25rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .status.error {
+      color: #c53f3f;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .stat {
+      padding: 0.85rem;
+      border-radius: var(--radius-md);
+      background: linear-gradient(140deg, #f7fbff, #edf5ff);
+      border: 1px solid #d8e6f6;
+    }
+
+    .stat .label {
+      font-size: 0.76rem;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .stat .value {
+      margin-top: 0.2rem;
+      font-size: 1.35rem;
+      font-weight: 800;
+      line-height: 1;
+      color: #112740;
+    }
+
+    .history-list {
+      list-style: none;
+      display: grid;
+      gap: 0.7rem;
+    }
+
+    .history-item {
+      border: 1px solid #dde9f8;
+      border-radius: var(--radius-md);
+      background: #ffffff;
+      padding: 0.8rem;
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    .history-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.7rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0.26rem 0.6rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .badge.win {
+      background: rgba(19, 198, 122, 0.14);
+      color: #0f8050;
+    }
+
+    .badge.loss {
+      background: rgba(241, 95, 95, 0.14);
+      color: #b53e3e;
+    }
+
+    .history-main {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.55rem;
+      align-items: center;
+    }
+
+    .scoreline {
+      font-size: 1.08rem;
+      font-weight: 800;
+      color: #0f2744;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 500;
+    }
+
+    .empty {
+      border: 1px dashed #c8d9ed;
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      text-align: center;
+      color: var(--muted);
+      background: #f8fbff;
+    }
+
+    @media (min-width: 740px) {
+      body {
+        padding: 1.6rem;
+      }
+
+      .content {
+        grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.3fr);
+      }
+
+      .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .form-grid label:nth-child(1),
+      .form-grid label:nth-child(4) {
+        grid-column: span 2;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .stat {
+        min-height: 95px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel hero">
+      <h1>Pickleball Match Tracker</h1>
+      <p>Log your games, monitor momentum, and track your streaks. Every stat updates instantly and saves automatically on this device.</p>
+    </section>
+
+    <section class="content">
+      <article class="panel stack">
+        <h2 class="section-title">Log Match</h2>
+        <form id="matchForm" novalidate>
+          <div class="form-grid">
+            <label>
+              Match Date
+              <input type="date" id="matchDate" required />
+            </label>
+            <label>
+              My Score
+              <input type="number" id="myScore" min="0" required inputmode="numeric" />
+            </label>
+            <label>
+              Opponent Score
+              <input type="number" id="opponentScore" min="0" required inputmode="numeric" />
+            </label>
+            <label>
+              Opponent Name (Optional)
+              <input type="text" id="opponentName" maxlength="40" placeholder="Taylor" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn-primary" type="submit">Save Match</button>
+          </div>
+          <p id="status" class="status" aria-live="polite"></p>
+        </form>
+      </article>
+
+      <article class="panel stack">
+        <h2 class="section-title">Stats Dashboard</h2>
+        <div class="stats-grid" aria-live="polite">
+          <div class="stat">
+            <div class="label">Games Played</div>
+            <div class="value" id="totalGames">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">Wins</div>
+            <div class="value" id="wins">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">Losses</div>
+            <div class="value" id="losses">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">Win %</div>
+            <div class="value" id="winPct">0%</div>
+          </div>
+          <div class="stat">
+            <div class="label">Current Streak</div>
+            <div class="value" id="winStreak">0</div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Match History</h2>
+        <ul id="historyList" class="history-list"></ul>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'pickleballTrackerMatches';
+
+    const form = document.getElementById('matchForm');
+    const dateInput = document.getElementById('matchDate');
+    const myScoreInput = document.getElementById('myScore');
+    const oppScoreInput = document.getElementById('opponentScore');
+    const oppNameInput = document.getElementById('opponentName');
+    const statusEl = document.getElementById('status');
+
+    const totalGamesEl = document.getElementById('totalGames');
+    const winsEl = document.getElementById('wins');
+    const lossesEl = document.getElementById('losses');
+    const winPctEl = document.getElementById('winPct');
+    const winStreakEl = document.getElementById('winStreak');
+    const historyListEl = document.getElementById('historyList');
+
+    let matches = [];
+
+    function setTodayDefault() {
+      if (!dateInput.value) {
+        const today = new Date();
+        const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, 10);
+        dateInput.value = localDate;
+      }
+    }
+
+    function showStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.classList.toggle('error', isError);
+    }
+
+    function loadMatches() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        matches = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(matches)) {
+          matches = [];
+        }
+      } catch (_error) {
+        matches = [];
+      }
+    }
+
+    function saveMatches() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(matches));
+    }
+
+    function sortMatchesNewestFirst(data) {
+      return [...data].sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+    }
+
+    function formatDate(dateString) {
+      const d = new Date(dateString + 'T00:00:00');
+      if (Number.isNaN(d.getTime())) {
+        return dateString;
+      }
+      return d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    }
+
+    function calculateCurrentWinStreak(sortedMatches) {
+      let streak = 0;
+      for (const match of sortedMatches) {
+        if (match.isWin) {
+          streak += 1;
+        } else {
+          break;
+        }
+      }
+      return streak;
+    }
+
+    function updateStats(sortedMatches) {
+      const totalGames = sortedMatches.length;
+      const wins = sortedMatches.filter((m) => m.isWin).length;
+      const losses = totalGames - wins;
+      const winPct = totalGames === 0 ? 0 : (wins / totalGames) * 100;
+      const streak = calculateCurrentWinStreak(sortedMatches);
+
+      totalGamesEl.textContent = totalGames;
+      winsEl.textContent = wins;
+      lossesEl.textContent = losses;
+      winPctEl.textContent = `${winPct.toFixed(1)}%`;
+      winStreakEl.textContent = streak;
+    }
+
+    function renderHistory(sortedMatches) {
+      historyListEl.innerHTML = '';
+
+      if (sortedMatches.length === 0) {
+        const emptyEl = document.createElement('li');
+        emptyEl.className = 'empty';
+        emptyEl.textContent = 'No matches logged yet. Add your first game above.';
+        historyListEl.appendChild(emptyEl);
+        return;
+      }
+
+      for (const match of sortedMatches) {
+        const item = document.createElement('li');
+        item.className = 'history-item';
+
+        const top = document.createElement('div');
+        top.className = 'history-top';
+
+        const resultBadge = document.createElement('span');
+        resultBadge.className = `badge ${match.isWin ? 'win' : 'loss'}`;
+        resultBadge.textContent = match.isWin ? 'Win' : 'Loss';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-danger';
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.setAttribute('aria-label', `Delete match on ${formatDate(match.date)}`);
+        deleteBtn.addEventListener('click', () => {
+          deleteMatch(match.id);
+        });
+
+        top.append(resultBadge, deleteBtn);
+
+        const main = document.createElement('div');
+        main.className = 'history-main';
+
+        const score = document.createElement('div');
+        score.className = 'scoreline';
+        score.textContent = `You ${match.myScore} - ${match.opponentScore} Opponent`;
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const namePart = match.opponentName ? ` vs ${match.opponentName}` : '';
+        meta.textContent = `${formatDate(match.date)}${namePart}`;
+
+        main.append(score, meta);
+        item.append(top, main);
+        historyListEl.appendChild(item);
+      }
+    }
+
+    function refreshUI() {
+      const sortedMatches = sortMatchesNewestFirst(matches);
+      updateStats(sortedMatches);
+      renderHistory(sortedMatches);
+    }
+
+    function deleteMatch(id) {
+      matches = matches.filter((m) => m.id !== id);
+      saveMatches();
+      refreshUI();
+      showStatus('Match deleted.');
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const date = dateInput.value;
+      const myScore = Number(myScoreInput.value);
+      const opponentScore = Number(oppScoreInput.value);
+      const opponentName = oppNameInput.value.trim();
+
+      if (!date || Number.isNaN(myScore) || Number.isNaN(opponentScore)) {
+        showStatus('Please fill in date and both scores.', true);
+        return;
+      }
+
+      if (myScore < 0 || opponentScore < 0) {
+        showStatus('Scores cannot be negative.', true);
+        return;
+      }
+
+      if (myScore === opponentScore) {
+        showStatus('Scores cannot be tied. Enter a winning score.', true);
+        return;
+      }
+
+      const match = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        date,
+        myScore,
+        opponentScore,
+        opponentName,
+        isWin: myScore > opponentScore,
+        createdAt: Date.now()
+      };
+
+      matches.push(match);
+      saveMatches();
+      refreshUI();
+
+      myScoreInput.value = '';
+      oppScoreInput.value = '';
+      oppNameInput.value = '';
+      setTodayDefault();
+      showStatus(match.isWin ? 'Match saved: nice win!' : 'Match saved. Next one is yours.');
+    });
+
+    loadMatches();
+    setTodayDefault();
+    refreshUI();
+  </script>
+</body>
+</html>
