@@ -1,0 +1,139 @@
+name: Issue → PR (Claude)
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    # Only run when the "claude" label is added
+    if: github.event.label.name == 'claude'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure git
+        run: |
+          git config user.name "claude-bot"
+          git config user.email "claude-bot@users.noreply.github.com"
+
+      - name: Comment on issue — starting
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "🤖 Claude is working on this! I'll post back when a PR is ready."
+
+      - name: Create branch
+        id: branch
+        run: |
+          SLUG=$(echo "${{ github.event.issue.title }}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9]/-/g' \
+            | sed 's/-\{2,\}/-/g' \
+            | cut -c1-40 \
+            | sed 's/-$//')
+          BRANCH="claude/issue-${{ github.event.issue.number }}-${SLUG}"
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Write prompt
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 - << 'EOF'
+          import os
+          n     = os.environ['ISSUE_NUMBER']
+          title = os.environ['ISSUE_TITLE']
+          body  = os.environ.get('ISSUE_BODY', '(no description provided)')
+
+          prompt = f"""You are a software engineer implementing GitHub issue #{n} in the engrart/fun-projects repository.
+
+Issue title: {title}
+
+Issue description:
+{body}
+
+---
+Steps:
+1. Explore the repository to understand its structure and conventions.
+2. Implement exactly what the issue describes — no more, no less.
+3. Follow the existing code style (this is primarily an HTML / CSS / vanilla JS project).
+4. When complete, stage and commit all changes with the message:
+     Fix #{n}: {title}
+5. Do NOT create a PR — just commit to the current branch.
+
+Make sure the implementation compiles / runs correctly based on the language used.
+"""
+          with open('/tmp/claude_prompt.txt', 'w') as f:
+              f.write(prompt)
+          EOF
+
+      - name: Run Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: claude --dangerously-skip-permissions -p "$(cat /tmp/claude_prompt.txt)"
+
+      - name: Stage uncommitted changes (if any)
+        run: |
+          git add -A
+          # Commit only if there are staged changes Claude didn't already commit
+          git diff --cached --quiet || \
+            git commit -m "Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
+
+      - name: Push branch
+        run: git push origin "${{ steps.branch.outputs.name }}"
+
+      - name: Create PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr create \
+            --title "Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}" \
+            --body "## Summary
+
+Closes #${{ github.event.issue.number }}
+
+This PR was automatically implemented by Claude Code based on the issue description.
+
+> **Review before merging.** Verify the changes do what you expect.
+
+---
+🤖 Generated with [Claude Code](https://claude.ai/code)" \
+            --base main \
+            --head "${{ steps.branch.outputs.name }}")
+          echo "url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment on issue — PR ready
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "✅ PR is ready for your review: ${{ steps.pr.outputs.url }}"
+
+      - name: Comment on issue — failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "❌ Something went wrong. Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
